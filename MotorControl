@@ -1,1 +1,88 @@
+#include "BluetoothSerial.h"
+#include <ESP32Servo.h>
 
+const char mover11 = 'q';
+const char mover12 = 'w';
+const char mover21 = 'a';
+const char mover22 = 's';
+const char mover31 = 'z';
+const char mover32 = 'x';
+
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
+
+BluetoothSerial SerialBT;
+
+Servo servo1;
+Servo servo2;
+Servo servo3;
+
+int servoPin1 = 13;
+int servoPin2 = 12;
+int servoPin3 = 14;
+
+int posicao1 = 0;
+int posicao2 = 0;
+int posicao3 = 0;
+
+void setup() {
+ Serial.begin(115200);
+
+ servo1.attach(servoPin1);
+ servo2.attach(servoPin2);
+ servo3.attach(servoPin3);
+
+ servo1.write(0);
+ servo2.write(0);
+ servo3.write(0);
+
+ SerialBT.begin("Manipulador3"); //Bluetooth device name
+ Serial.println("Ligou");
+}
+
+
+
+void loop() {
+  if (SerialBT.available()) {
+    char message = SerialBT.read();
+    Serial.write(message);
+
+    switch (message) {
+      case mover11:
+        posicao1 = constrain(posicao1 + 45, 0, 180);
+        servo1.write(posicao1);
+        break;
+
+      case mover12:
+        posicao1 = constrain(posicao1 - 45, 0, 180);
+        servo1.write(posicao1);
+        break;
+
+      case mover21:
+        posicao2 = constrain(posicao2 + 45, 0, 180);
+        servo2.write(posicao2);
+        break;
+
+      case mover22:
+        posicao2 = constrain(posicao2 - 45, 0, 180);
+        servo2.write(posicao2);
+        break;
+
+      case mover31:
+        posicao3 = constrain(posicao3 + 45, 0, 180);
+        servo3.write(posicao3);
+        break;
+
+      case mover32:
+        posicao3 = constrain(posicao3 - 45, 0, 180);
+        servo3.write(posicao3);
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  delay(200);
+}
