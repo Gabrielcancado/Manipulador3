@@ -1,0 +1,209 @@
+import sys
+from PyQt5.QtWidgets import (QApplication, QWidget, QHBoxLayout, QVBoxLayout, 
+                             QLabel, QPushButton, QDoubleSpinBox, QGroupBox, QTabWidget)
+from PyQt5.QtGui import QPixmap, QFont
+from PyQt5.QtCore import Qt
+import math
+
+# =========================================================================
+# INTERFACE GRÁFICA PyQt5 PARA CONTROLE DE MANIPULADOR PRP (VERSÃO 2)
+# - Adicionada interface com abas
+# - Adicionado controle por posição do efetuador (Cinemática Inversa)
+# =========================================================================
+
+class RobotControlGUI(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle('Painel de Controle v2 - Manipulador PRP')
+        self.setGeometry(100, 100, 850, 500)
+        self.initUI()
+
+    def initUI(self):
+        # --- Layout Principal (Horizontal) ---
+        main_layout = QHBoxLayout()
+
+        # --- Coluna da Esquerda (Visualização) ---
+        vis_group = QGroupBox("Visualização do Robô")
+        vis_layout = QVBoxLayout()
+        self.robot_image_label = QLabel(self)
+        pixmap = QPixmap('manipulator_prp.png')
+        self.robot_image_label.setPixmap(pixmap.scaled(380, 380, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.robot_image_label.setAlignment(Qt.AlignCenter)
+        vis_layout.addWidget(self.robot_image_label)
+        vis_group.setLayout(vis_layout)
+        
+        # --- Coluna da Direita (Abas de Controle) ---
+        self.tabs = QTabWidget()
+        self.tab1 = QWidget()
+        self.tab2 = QWidget()
+        
+        self.tabs.addTab(self.tab1, "Controle e Posição")
+        self.tabs.addTab(self.tab2, "Gráficos de Esforço")
+        
+        self.create_control_tab()
+        self.create_graphs_tab()
+        
+        # --- Montagem Final ---
+        main_layout.addWidget(vis_group, 1)
+        main_layout.addWidget(self.tabs, 1)
+
+        self.setLayout(main_layout)
+        self.show()
+
+    def create_control_tab(self):
+        """ Configura a primeira aba com todos os widgets de controle """
+        tab1_layout = QVBoxLayout()
+        
+        # --- Grupo 1: Controle por Junta (Cinemática Direta) ---
+        joint_control_group = QGroupBox("Controle por Junta (Alvos)")
+        joint_layout = QVBoxLayout()
+
+        self.junta1_spinbox = QDoubleSpinBox()
+        self.junta1_spinbox.setRange(0.0, 0.20)
+        self.junta1_spinbox.setSingleStep(0.01)
+        self.junta1_spinbox.setDecimals(3)
+        joint_layout.addWidget(QLabel('Junta 1 (Vertical, q1) [m]:'))
+        joint_layout.addWidget(self.junta1_spinbox)
+        
+        self.junta2_spinbox = QDoubleSpinBox()
+        self.junta2_spinbox.setRange(0.0, math.pi / 2)
+        self.junta2_spinbox.setSingleStep(0.1)
+        self.junta2_spinbox.setDecimals(3)
+        joint_layout.addWidget(QLabel('Junta 2 (Rotacional, q2) [rad]:'))
+        joint_layout.addWidget(self.junta2_spinbox)
+
+        self.junta3_spinbox = QDoubleSpinBox()
+        self.junta3_spinbox.setRange(0.0, 0.15)
+        self.junta3_spinbox.setSingleStep(0.01)
+        self.junta3_spinbox.setDecimals(3)
+        joint_layout.addWidget(QLabel('Junta 3 (Horizontal, q3) [m]:'))
+        joint_layout.addWidget(self.junta3_spinbox)
+        
+        self.move_by_joint_button = QPushButton('Mover para Alvos da Junta')
+        self.move_by_joint_button.clicked.connect(self.update_robot_state)
+        joint_layout.addWidget(self.move_by_joint_button)
+        joint_control_group.setLayout(joint_layout)
+
+        # --- Grupo 2: Controle por Posição do Efetuador (Cinemática Inversa) ---
+        ee_control_group = QGroupBox("Controle por Posição do Efetuador (Alvo Cartesiano)")
+        ee_layout = QVBoxLayout()
+        
+        self.x_spinbox = QDoubleSpinBox()
+        self.x_spinbox.setRange(-0.15, 0.15)
+        self.x_spinbox.setSingleStep(0.01)
+        self.x_spinbox.setDecimals(3)
+        ee_layout.addWidget(QLabel('Posição X desejada [m]:'))
+        ee_layout.addWidget(self.x_spinbox)
+        
+        self.y_spinbox = QDoubleSpinBox()
+        self.y_spinbox.setRange(0.0, 0.15)
+        self.y_spinbox.setSingleStep(0.01)
+        self.y_spinbox.setDecimals(3)
+        ee_layout.addWidget(QLabel('Posição Y desejada [m]:'))
+        ee_layout.addWidget(self.y_spinbox)
+        
+        self.z_spinbox = QDoubleSpinBox()
+        self.z_spinbox.setRange(0.0, 0.20)
+        self.z_spinbox.setSingleStep(0.01)
+        self.z_spinbox.setDecimals(3)
+        ee_layout.addWidget(QLabel('Posição Z desejada [m]:'))
+        ee_layout.addWidget(self.z_spinbox)
+        
+        self.move_by_ee_button = QPushButton('Calcular Cinemática Inversa e Mover')
+        self.move_by_ee_button.clicked.connect(self.calculate_ik_and_update)
+        ee_layout.addWidget(self.move_by_ee_button)
+        self.ik_status_label = QLabel("Status: Aguardando cálculo.")
+        ee_layout.addWidget(self.ik_status_label)
+        ee_control_group.setLayout(ee_layout)
+
+        # --- Grupo 3: Display de Informações ---
+        info_group = QGroupBox("Posição Atual do Efetuador (Calculada)")
+        info_layout = QVBoxLayout()
+        self.ee_pos_label = QLabel('Posição (X, Y, Z): Mova o robô para calcular.')
+        info_layout.addWidget(self.ee_pos_label)
+        info_group.setLayout(info_layout)
+        
+        # Adiciona os grupos à primeira aba
+        tab1_layout.addWidget(joint_control_group)
+        tab1_layout.addWidget(ee_control_group)
+        tab1_layout.addWidget(info_group)
+        self.tab1.setLayout(tab1_layout)
+
+    def create_graphs_tab(self):
+        """ Configura a segunda aba como um placeholder para gráficos futuros. """
+        tab2_layout = QVBoxLayout()
+        placeholder_label = QLabel("Os gráficos de torque/esforço por junta serão exibidos aqui futuramente.")
+        placeholder_label.setAlignment(Qt.AlignCenter)
+        font = QFont()
+        font.setPointSize(12)
+        font.setItalic(True)
+        placeholder_label.setFont(font)
+        tab2_layout.addWidget(placeholder_label)
+        self.tab2.setLayout(tab2_layout)
+
+    def calculate_ik_and_update(self):
+        """ Calcula a cinemática inversa a partir da posição do efetuador desejada. """
+        x_d = self.x_spinbox.value()
+        y_d = self.y_spinbox.value()
+        z_d = self.z_spinbox.value()
+
+        # Cinemática Inversa para o manipulador PRP
+        # q1 = z
+        # q3 = sqrt(x^2 + y^2)
+        # q2 = atan2(y, x)
+        
+        try:
+            q1_calc = z_d
+            q3_calc = math.sqrt(x_d**2 + y_d**2)
+            q2_calc = math.atan2(y_d, x_d)
+
+            # Verifica se os valores calculados estão dentro dos limites das juntas
+            if not (0.0 <= q1_calc <= 0.20):
+                raise ValueError(f"Posição Z (q1={q1_calc:.3f}) fora dos limites [0.0, 0.20].")
+            if not (0.0 <= q2_calc <= math.pi/2):
+                 raise ValueError(f"Posição X/Y resulta em ângulo q2={q2_calc:.3f} rad fora dos limites [0.0, pi/2].")
+            if not (0.0 <= q3_calc <= 0.15):
+                raise ValueError(f"Posição X/Y (q3={q3_calc:.3f}) fora do alcance do braço [0.0, 0.15].")
+
+            # Se os valores são válidos, atualiza os spinboxes das juntas
+            self.junta1_spinbox.setValue(q1_calc)
+            self.junta2_spinbox.setValue(q2_calc)
+            self.junta3_spinbox.setValue(q3_calc)
+            
+            self.ik_status_label.setText(f"Status: Posição alcançável. Alvos das juntas atualizados.")
+            self.ik_status_label.setStyleSheet("color: green;")
+
+            # Chama a função de movimento para executar a ação
+            self.update_robot_state()
+
+        except ValueError as e:
+            self.ik_status_label.setText(f"Erro: {e}")
+            self.ik_status_label.setStyleSheet("color: red;")
+            print(f"[ERRO DE CINEMÁTICA INVERSA] {e}")
+
+
+    def update_robot_state(self):
+        """ Lê os valores das juntas, calcula a cinemática direta e atualiza a interface. """
+        q1 = self.junta1_spinbox.value()
+        q2 = self.junta2_spinbox.value()
+        q3 = self.junta3_spinbox.value()
+
+        print("--- Enviando Comandos ---")
+        print(f"Mover Junta 1 para: {q1:.3f} m")
+        print(f"Mover Junta 2 para: {q2:.3f} rad")
+        print(f"Mover Junta 3 para: {q3:.3f} m")
+        print("-------------------------\n")
+
+        # Calcula a Cinemática Direta
+        x_ee = q3 * math.cos(q2)
+        y_ee = q3 * math.sin(q2)
+        z_ee = q1
+
+        pos_text = f'Posição (X, Y, Z):  X={x_ee:.3f} m, Y={y_ee:.3f} m, Z={z_ee:.3f} m'
+        self.ee_pos_label.setText(pos_text)
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    gui = RobotControlGUI()
+    sys.exit(app.exec_())
