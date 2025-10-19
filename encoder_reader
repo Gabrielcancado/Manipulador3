@@ -1,0 +1,41 @@
+#define EncoderPinA 18
+#define EncoderPinB 21
+
+// Pinos para controlar a direção
+#define ForwardPin 27
+#define BackwardPin 26
+
+// Esse pino controla a velocidade
+#define EnablePin 25
+
+// Inicia leitura do encoder em 0
+volatile long Encodervalue=0;
+
+void setup() {
+pinMode(ForwardPin,OUTPUT);
+pinMode(BackwardPin,OUTPUT);
+pinMode(EnablePin,OUTPUT);
+pinMode(EncoderPinA, INPUT);
+pinMode(EncoderPinB, INPUT);
+//Tpda vez que o encoder A for lido, puxa o interrupt
+attachInterrupt(digitalPinToInterrupt(EncoderPinA), updateEncoder, RISING);
+Serial.begin(9600);
+}
+
+void loop() {
+digitalWrite(ForwardPin,HIGH);
+digitalWrite(BackwardPin,LOW);
+analogWrite(EnablePin,255);
+Serial.println(Encodervalue);
+delay(100);
+}
+
+
+// Atualiza o valor do encoder já com a direção dele
+void updateEncoder()
+{
+if (digitalRead(EncoderPinA)> digitalRead(EncoderPinB))
+Encodervalue++;
+else
+Encodervalue--;
+}
