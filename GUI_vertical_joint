@@ -1,0 +1,148 @@
+import sys, time
+from PyQt5 import QtWidgets, QtCore
+import pyqtgraph as pg
+import serial
+import serial.tools.list_ports
+
+class SerialReader(QtCore.QObject):
+    line_received = QtCore.pyqtSignal(str)
+    connected = QtCore.pyqtSignal(bool)
+
+    def __init__(self, port=None, baud=115200):
+        super().__init__()
+        self.port = port
+        self.baud = baud
+        self.ser = None
+        self.timer = QtCore.QTimer()
+        self.timer.timeout.connect(self.readLine)
+        self.timer.setInterval(50)
+
+    def start(self):
+        try:
+            self.ser = serial.Serial(self.port, self.baud, timeout=0.1)
+            self.timer.start()
+            self.connected.emit(True)
+        except:
+            self.connected.emit(False)
+
+    def stop(self):
+        self.timer.stop()
+        if self.ser: self.ser.close()
+        self.connected.emit(False)
+
+    def send(self, txt):
+        if self.ser:
+            self.ser.write((txt + "\n").encode())
+
+    def readLine(self):
+        if not self.ser: return
+        try:
+            line = self.ser.readline().decode().strip()
+            if line:
+                self.line_received.emit(line)
+        except:
+            pass
+
+
+class MainWindow(QtWidgets.QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Controle Prismatico - PID")
+        self.resize(850, 600)
+
+        w = QtWidgets.QWidget(); self.setCentralWidget(w)
+        layout = QtWidgets.QVBoxLayout(w)
+
+        hl = QtWidgets.QHBoxLayout()
+        layout.addLayout(hl)
+
+        self.ports = QtWidgets.QComboBox()
+        self.refreshPorts()
+        hl.addWidget(self.ports)
+
+        btnR = QtWidgets.QPushButton("Atualizar")
+        btnR.clicked.connect(self.refreshPorts)
+        hl.addWidget(btnR)
+
+        self.btnConnect = QtWidgets.QPushButton("Conectar")
+        self.btnConnect.setCheckable(True)
+        self.btnConnect.clicked.connect(self.toggleConnect)
+        hl.addWidget(self.btnConnect)
+
+        hl.addStretch()
+
+        self.ref = QtWidgets.QDoubleSpinBox()
+        self.ref.setPrefix("Ref (mm): ")
+        self.ref.setRange(-2000, 2000)
+        hl.addWidget(self.ref)
+
+        btnSend = QtWidgets.QPushButton("Enviar")
+        btnSend.clicked.connect(lambda: self.send(f"SET:{self.ref.value()}"))
+        hl.addWidget(btnSend)
+
+        btnStop = QtWidgets.QPushButton("Parar")
+        btnStop.clicked.connect(lambda: self.send("STOP"))
+        hl.addWidget(btnStop)
+
+        self.plot = pg.PlotWidget(title="Posição da junta (mm)")
+        self.plot.setLabel('left', 'Posição (mm)')
+        self.plot.setLabel('bottom', 'Tempo (s)')
+        layout.addWidget(self.plot)
+        self.curve = self.plot.plot([], [], pen=pg.mkPen(width=2))
+
+        self.status = QtWidgets.QLabel("Desconectado")
+        layout.addWidget(self.status)
+
+        self.reader = None
+        self.t0 = time.time()
+        self.x = []; self.y = []
+
+    def refreshPorts(self):
+        self.ports.clear()
+        for p in serial.tools.list_ports.comports():
+            self.ports.addItem(p.device)
+
+    def toggleConnect(self, checked):
+        if checked:
+            port = self.ports.currentText()
+            if not port:
+                self.status.setText("Selecione uma porta")
+                self.btnConnect.setChecked(False)
+                return
+            self.reader = SerialReader(port)
+            self.reader.connected.connect(self.onConnection)
+            self.reader.line_received.connect(self.onLine)
+            self.reader.start()
+        else:
+            if self.reader: self.reader.stop()
+
+    def onConnection(self, ok):
+        self.status.setText("Conectado" if ok else "Desconectado")
+        self.btnConnect.setChecked(ok)
+
+    def send(self, txt):
+        if self.reader: self.reader.send(txt)
+
+    def onLine(self, line):
+        if line.startswith("POS:"):
+            try:
+                pos = float(line.split(":",1)[1])
+                t = time.time() - self.t0
+                self.x.append(t); self.y.append(pos)
+                if len(self.x)>200:
+                    self.x=self.x[-200:]; self.y=self.y[-200:]
+                self.curve.setData(self.x, self.y)
+            except:
+                pass
+        else:
+            self.status.setText(line)
+
+
+def main():
+    app = QtWidgets.QApplication(sys.argv)
+    win = MainWindow()
+    win.show()
+    sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    main()
