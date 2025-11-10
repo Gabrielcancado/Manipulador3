@@ -7,12 +7,12 @@
 
 volatile long Encodervalue = 0;
 
-// Ganhos PID (ajuste depois)
+// Ganhos
 float Kp = 1.0;
 float Ki = 0.0;
 float Kd = 0.0;
 
-long referencia = 280; // Exemplo: 2 voltas (2*140)
+long referencia = 280;
 float erro, erro_anterior = 0;
 float integral = 0;
 unsigned long lastTime = 0;
