@@ -1,0 +1,153 @@
+// ====== CONFIGURAÇÕES DE HARDWARE ======
+#define EncoderPinA 18
+#define EncoderPinB 21
+
+#define ForwardPin 27
+#define BackwardPin 26
+#define EnablePin 25
+
+// PWM (ESP32 usa ledc)
+const int pwmChannel = 0;
+const int pwmFreq = 5000;
+const int pwmResolution = 8; // PWM 0..255
+
+// Encoder e conversões
+volatile long Encodervalue = 0;
+const float COUNTS_PER_REV = 140.0;
+const float DIAMETER_MM = 31.8;
+const float MM_PER_REV = 3.14159 * DIAMETER_MM;   // ~99.9 mm
+const float MM_PER_COUNT = MM_PER_REV / COUNTS_PER_REV; // ~0.713 mm
+
+// PID
+double Kp = 2.0;
+double Ki = 0.5;
+double Kd = 0.1;
+
+long setpointCounts = 0; // alvo interno em contagens
+
+// PID timing
+unsigned long lastPidMillis = 0;
+const unsigned long DT_MS = 50;
+
+// Envio serial
+unsigned long lastSendMillis = 0;
+const unsigned long SEND_MS = 100;
+
+// PID state
+double integralTerm = 0;
+double prevError = 0;
+
+
+// ====== ENCODER INTERRUPT ======
+void IRAM_ATTR updateEncoder() {
+  if (digitalRead(EncoderPinA) > digitalRead(EncoderPinB)) Encodervalue++;
+  else Encodervalue--;
+}
+
+
+// ====== SETUP ======
+void setup() {
+  pinMode(ForwardPin, OUTPUT);
+  pinMode(BackwardPin, OUTPUT);
+  pinMode(EnablePin, OUTPUT);
+
+  pinMode(EncoderPinA, INPUT);
+  pinMode(EncoderPinB, INPUT);
+  attachInterrupt(digitalPinToInterrupt(EncoderPinA), updateEncoder, RISING);
+
+  ledcSetup(pwmChannel, pwmFreq, pwmResolution);
+  ledcAttachPin(EnablePin, pwmChannel);
+
+  Serial.begin(115200);
+  Serial.println("READY");
+}
+
+
+// ====== LOOP ======
+void loop() {
+  unsigned long now = millis();
+
+  // Recebe comandos
+  if (Serial.available()) {
+    String line = Serial.readStringUntil('\n');
+    line.trim();
+    parseCommand(line);
+  }
+
+  // PID em dt fixo
+  if (now - lastPidMillis >= DT_MS) {
+    lastPidMillis = now;
+    runPID();
+  }
+
+  // Envia posição real em mm
+  if (now - lastSendMillis >= SEND_MS) {
+    lastSendMillis = now;
+    double pos_mm = Encodervalue * MM_PER_COUNT;
+    Serial.print("POS:");
+    Serial.println(pos_mm);
+  }
+}
+
+
+// ====== ROTINA DO PID ======
+void runPID() {
+  double current = (double)Encodervalue;
+  double error = (double)setpointCounts - current;
+
+  integralTerm += error * (DT_MS / 1000.0);
+  const double integralLimit = 10000.0;
+  if (integralTerm > integralLimit) integralTerm = integralLimit;
+  if (integralTerm < -integralLimit) integralTerm = -integralLimit;
+
+  double derivative = (error - prevError) / (DT_MS / 1000.0);
+  prevError = error;
+
+  double output = Kp * error + Ki * integralTerm + Kd * derivative;
+
+  int pwm = abs(output);
+  if (pwm > 255) pwm = 255;
+
+  if (output > 0) {
+    digitalWrite(ForwardPin, HIGH);
+    digitalWrite(BackwardPin, LOW);
+  } else if (output < 0) {
+    digitalWrite(ForwardPin, LOW);
+    digitalWrite(BackwardPin, HIGH);
+  } else {
+    digitalWrite(ForwardPin, LOW);
+    digitalWrite(BackwardPin, LOW);
+  }
+
+  ledcWrite(pwmChannel, pwm);
+}
+
+
+// ====== PARSER DE COMANDOS ======
+void parseCommand(String cmd) {
+  cmd.toUpperCase();
+
+  // SET:<mm>
+  if (cmd.startsWith("SET:")) {
+    double mm = cmd.substring(4).toDouble();
+    setpointCounts = (long)round(mm / MM_PER_COUNT);
+    integralTerm = 0;
+    prevError = 0;
+    Serial.print("ACK:SET_MM:");
+    Serial.println(mm);
+  }
+
+  // STOP
+  else if (cmd == "STOP") {
+    setpointCounts = Encodervalue;
+    ledcWrite(pwmChannel, 0);
+    digitalWrite(ForwardPin, LOW);
+    digitalWrite(BackwardPin, LOW);
+    Serial.println("ACK:STOP");
+  }
+
+  else {
+    Serial.print("ERR:");
+    Serial.println(cmd);
+  }
+}
