@@ -1,0 +1,77 @@
+#define EncoderPinA 18
+#define EncoderPinB 21
+
+#define ForwardPin 27
+#define BackwardPin 26
+#define EnablePin 25
+
+volatile long Encodervalue = 0;
+
+// Ganhos PID (ajuste depois)
+float Kp = 1.0;
+float Ki = 0.0;
+float Kd = 0.0;
+
+long referencia = 280; // Exemplo: 2 voltas (2*140)
+float erro, erro_anterior = 0;
+float integral = 0;
+unsigned long lastTime = 0;
+
+void setup() {
+  pinMode(ForwardPin, OUTPUT);
+  pinMode(BackwardPin, OUTPUT);
+  pinMode(EnablePin, OUTPUT);
+  pinMode(EncoderPinA, INPUT);
+  pinMode(EncoderPinB, INPUT);
+
+  attachInterrupt(digitalPinToInterrupt(EncoderPinA), updateEncoder, RISING);
+  Serial.begin(9600);
+
+  lastTime = millis();
+}
+
+void loop() {
+
+  // *********** PID **************
+  unsigned long now = millis();
+  float dt = (now - lastTime) / 1000.0; // segundos
+  lastTime = now;
+
+  erro = referencia - Encodervalue;
+
+  integral += erro * dt;
+  float derivada = (erro - erro_anterior) / dt;
+  erro_anterior = erro;
+
+  float output = Kp*erro + Ki*integral + Kd*derivada;
+
+  // *********** CONTROLE DE DIREÇÃO **************
+  if (output > 0) {
+    digitalWrite(ForwardPin, HIGH);
+    digitalWrite(BackwardPin, LOW);
+  } else {
+    digitalWrite(ForwardPin, LOW);
+    digitalWrite(BackwardPin, HIGH);
+  }
+
+  // Limita e envia PWM
+  output = abs(output);
+  if (output > 255) output = 255;
+  analogWrite(EnablePin, output);
+
+  // Debug
+  Serial.print("Posicao: ");
+  Serial.print(Encodervalue);
+  Serial.print(" | Erro: ");
+  Serial.print(erro);
+  Serial.print(" | PWM: ");
+  Serial.println(output);
+}
+
+// Atualiza encoder
+void updateEncoder() {
+  if (digitalRead(EncoderPinA) > digitalRead(EncoderPinB))
+    Encodervalue++;
+  else
+    Encodervalue--;
+}
